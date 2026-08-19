@@ -1,0 +1,33 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      SAM_AUDIO_ENGINE: ${SAM_AUDIO_ENGINE:-auto}
+      SAM_AUDIO_MODEL_NAME: ${SAM_AUDIO_MODEL_NAME:-facebook/sam-audio-base}
+      SAM_AUDIO_DEVICE: ${SAM_AUDIO_DEVICE:-auto}
+      SAM_AUDIO_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080
+      # Needed once to download gated checkpoints from HuggingFace; see README.
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - sam-audio-storage:/data/storage
+    # Uncomment to run the real SAM-Audio model on GPU (requires the NVIDIA
+    # Container Toolkit on the host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  sam-audio-storage:

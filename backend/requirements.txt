@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+pydantic-settings==2.7.0
+torch>=2.2
+torchaudio>=2.2
+soundfile>=0.12
+numpy>=1.26
+
+# Real SAM-Audio inference (requires a CUDA GPU and gated HuggingFace access).
+# Install separately once you have access, per https://github.com/facebookresearch/sam-audio:
+#   git clone https://github.com/facebookresearch/sam-audio.git
+#   pip install ./sam-audio
+# Then set SAM_AUDIO_ENGINE=sam_audio (see backend/.env.example).
