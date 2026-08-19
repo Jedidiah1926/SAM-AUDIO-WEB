@@ -4,12 +4,8 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: {
-    proxy: {
-      '/api': {
-        target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-    },
-  },
+  // Relative base so the built assets work whether the site is served from
+  // a GitHub Pages project path (https://user.github.io/repo/), a user/org
+  // page, or a custom domain.
+  base: './',
 })

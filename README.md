@@ -6,29 +6,50 @@ audio clip, describe the sound you want ("dog barking", "acoustic guitar"),
 and get back two files: the isolated **target** sound and the **residual**
 (everything else).
 
+The frontend is a static site (works on GitHub Pages, no server required).
+By default it runs a small in-browser demo filter; optionally point it at
+your own backend running the real SAM-Audio model for actual separation.
+
 ```
-frontend (React + Vite)  --/api-->  backend (FastAPI)  --.separate()-->  SAM-Audio
+frontend (static, React + Vite)
+  ├─ no backend configured → in-browser Web Audio mock engine
+  └─ backend URL configured → /api/* on your FastAPI backend → SAM-Audio
 ```
 
 ## Two engines
 
 SAM-Audio's checkpoints are gated on HuggingFace and the model expects a CUDA
-GPU, so this project ships two interchangeable separation engines behind one
-API:
+GPU — not something a static GitHub Pages site can run. So the app ships two
+interchangeable, API-compatible separation paths:
 
-- **`sam_audio`** — the real model, via the `sam_audio` Python package.
-- **`mock`** — a small deterministic DSP stand-in (a band-pass filter keyed
-  off the text prompt) used automatically when `sam_audio` isn't installed.
-  It exists purely so the upload → separate → playback pipeline can be built
-  and tested without a GPU or model weights. The UI always shows a banner
-  when it's active, and `/api/health` reports which engine is serving
-  requests.
+- **In-browser demo (default, no backend)** — `frontend/src/mockEngine.ts`
+  band-pass filters the audio using the Web Audio API, entirely client-side.
+  The filter's center frequency is a deterministic hash of the text prompt,
+  so different prompts audibly differ. This is what runs when the site is
+  deployed as-is to GitHub Pages.
+- **Real backend** — `backend/` is a FastAPI service wrapping the actual
+  `sam_audio` package (`SamAudioEngine` in `backend/app/engine.py`). It also
+  has its own DSP mock (`MockEngine`) as a fallback when `sam_audio` isn't
+  installed on it, used automatically until you set it up per below.
 
-Set `SAM_AUDIO_ENGINE=auto` (default) to use the real model when available
-and fall back to the mock otherwise, or force one explicitly (`sam_audio` /
-`mock`).
+Click the **⚙ (settings)** button in the app header to enter a backend URL;
+leave it empty to stay on the in-browser demo. The status badge always shows
+which engine is actually serving requests, and a banner explains when you're
+looking at demo output.
 
-## Running with real SAM-Audio
+## Deploying the frontend to GitHub Pages
+
+1. In the repo's **Settings → Pages**, set "Source" to **GitHub Actions**.
+2. Push to `main` (or run the workflow manually) — `.github/workflows/deploy-pages.yml`
+   builds `frontend/` and publishes `frontend/dist` to Pages.
+3. Visit `https://<user>.github.io/<repo>/`. It works immediately with the
+   in-browser demo engine, no configuration needed.
+
+To wire it up to real SAM-Audio, deploy the backend somewhere with a GPU
+(see below), then open the deployed site, click ⚙, and paste that backend's
+URL.
+
+## Running real SAM-Audio as a backend
 
 1. Request access to the checkpoints on the [SAM-Audio HuggingFace
    repo](https://huggingface.co/facebook/sam-audio-base), then
@@ -38,17 +59,32 @@ and fall back to the mock otherwise, or force one explicitly (`sam_audio` /
    git clone https://github.com/facebookresearch/sam-audio.git
    pip install ./sam-audio
    ```
-3. In `backend/.env` (copy from `.env.example`), set:
+3. In `backend/.env` (copy from `backend/.env.example`), set:
    ```
    SAM_AUDIO_ENGINE=sam_audio
    SAM_AUDIO_MODEL_NAME=facebook/sam-audio-base   # or -small / -large, optionally -tv
+   SAM_AUDIO_CORS_ORIGINS=https://<user>.github.io,http://localhost:5173
    ```
-4. Start the backend as usual — it will download and load the checkpoint on
-   first request.
+4. Deploy the backend (a host with a GPU — this is not something GitHub
+   Pages or any static host can run) and point the frontend's ⚙ settings at
+   its public URL.
 
-Without this setup, the app still runs end-to-end using the mock engine.
+Without any of this, the app still runs end-to-end using the in-browser mock
+engine — nothing above is required to try it out.
 
 ## Local development
+
+### Frontend only (default, no backend)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 — the in-browser demo engine works with zero
+setup. To test against a local backend instead, start it (below) and enter
+`http://127.0.0.1:8000` in the ⚙ settings panel.
 
 ### Backend
 
@@ -60,25 +96,18 @@ cp .env.example .env   # optional, defaults to the mock engine
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Vite proxies `/api/*` to `http://127.0.0.1:8000` in dev (see
-`vite.config.ts`), so open http://localhost:5173 and both services talk to
-each other with no CORS setup needed.
-
-## Docker Compose
+## Docker Compose (backend + a served frontend build)
 
 ```bash
 docker compose up --build
 ```
 
-Frontend: http://localhost:8080, backend: http://localhost:8000. Set
+Frontend: http://localhost:8080, backend: http://localhost:8000. The
+frontend still defaults to the in-browser demo engine — open it, click ⚙,
+and set the backend URL to `http://localhost:8080` (the frontend's own
+origin; nginx proxies `/api/*` to the backend container per
+`frontend/nginx.conf`, so no CORS configuration is needed) to route
+separation through the compose backend instead. Set
 `SAM_AUDIO_ENGINE=sam_audio` and `HF_TOKEN=...` in the environment (or a
 `.env` file next to `docker-compose.yml`) to run the real model; uncomment
 the GPU `deploy` block if the host has the NVIDIA Container Toolkit.
@@ -97,9 +126,10 @@ Limits (`backend/.env`): `SAM_AUDIO_MAX_UPLOAD_MB` (default 50MB),
 
 ## Notes
 
-- Audio I/O uses `soundfile` rather than `torchaudio.load/save`, since newer
-  torchaudio versions require TorchCodec + a matching system FFmpeg install;
-  `soundfile` covers wav/flac/ogg with no extra system dependencies.
+- Audio I/O on the backend uses `soundfile` rather than `torchaudio.load/save`,
+  since newer torchaudio versions require TorchCodec + a matching system
+  FFmpeg install; `soundfile` covers wav/flac/ogg with no extra system
+  dependencies.
 - SAM-Audio itself is distributed under Meta's SAM License — see the
   [upstream repo](https://github.com/facebookresearch/sam-audio) for terms
   before using its checkpoints.
