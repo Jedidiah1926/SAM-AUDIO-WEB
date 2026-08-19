@@ -17,18 +17,32 @@ export interface SeparateResponse {
   residual_url: string
 }
 
-export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch('/api/health')
-  if (!res.ok) throw new Error('Health check failed')
+function normalizeBase(backendUrl: string): string {
+  return backendUrl.trim().replace(/\/+$/, '')
+}
+
+function absoluteUrl(base: string, path: string): string {
+  return /^https?:\/\//.test(path) ? path : `${base}${path}`
+}
+
+export async function fetchHealth(backendUrl: string): Promise<HealthResponse> {
+  const base = normalizeBase(backendUrl)
+  const res = await fetch(`${base}/api/health`)
+  if (!res.ok) throw new Error(`Health check failed (${res.status})`)
   return res.json()
 }
 
-export async function separateAudio(file: File, description: string): Promise<SeparateResponse> {
+export async function separateAudio(
+  backendUrl: string,
+  file: File,
+  description: string,
+): Promise<SeparateResponse> {
+  const base = normalizeBase(backendUrl)
   const form = new FormData()
   form.append('audio', file)
   form.append('description', description)
 
-  const res = await fetch('/api/separate', { method: 'POST', body: form })
+  const res = await fetch(`${base}/api/separate`, { method: 'POST', body: form })
   if (!res.ok) {
     let detail = `Separation failed (${res.status})`
     try {
@@ -39,5 +53,12 @@ export async function separateAudio(file: File, description: string): Promise<Se
     }
     throw new Error(detail)
   }
-  return res.json()
+
+  const data = (await res.json()) as SeparateResponse
+  return {
+    ...data,
+    original_url: absoluteUrl(base, data.original_url),
+    target_url: absoluteUrl(base, data.target_url),
+    residual_url: absoluteUrl(base, data.residual_url),
+  }
 }
